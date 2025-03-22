@@ -11,7 +11,7 @@ from typing import Optional
 log_dir = Path(__file__).resolve().parent.parent.parent / "logs"
 os.makedirs(log_dir, exist_ok=True)
 
-def setup_logger(name: str, log_file: Optional[str] = None, level: int = logging.INFO) -> logging.Logger:
+def setup_logger(name: str, log_file: Optional[str] = None, level: int = None) -> logging.Logger:
     """
     Set up a logger with console and file handlers.
     
@@ -23,6 +23,20 @@ def setup_logger(name: str, log_file: Optional[str] = None, level: int = logging
     Returns:
         logging.Logger: Configured logger
     """
+    # Check for environment variable to override log level
+    env_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+    if level is None:
+        if env_level == 'DEBUG':
+            level = logging.DEBUG
+        elif env_level == 'INFO':
+            level = logging.INFO
+        elif env_level == 'WARNING':
+            level = logging.WARNING
+        elif env_level == 'ERROR':
+            level = logging.ERROR
+        else:
+            level = logging.INFO
+    
     # Create logger
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -35,10 +49,14 @@ def setup_logger(name: str, log_file: Optional[str] = None, level: int = logging
     console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(pathname)s:%(lineno)d - %(message)s')
     
-    # Create console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
+    # Check if console logging is enabled
+    log_to_console = os.environ.get('LOG_TO_CONSOLE', 'false').lower() == 'true'
+    
+    # Create console handler if enabled
+    if log_to_console:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
     
     # Create file handler if log_file is provided
     if log_file:

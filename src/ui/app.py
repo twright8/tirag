@@ -29,7 +29,7 @@ from src.document_processing.document_loader import DocumentLoader
 from src.document_processing.document_chunker import DocumentChunker
 from src.document_processing.coreference_resolver import CoreferenceResolver
 from src.entity_extraction.entity_extractor import EntityExtractor
-from src.entity_extraction.relationship_classifier import RelationshipClassifier
+from src.entity_extraction.relationship_extractor import RelationshipExtractor
 from src.indexing.bm25_indexer import BM25Indexer
 from src.indexing.embedding_indexer import EmbeddingIndexer
 from src.query_system.hybrid_searcher import HybridSearcher
@@ -40,20 +40,33 @@ from src.utils.logger import setup_logger, get_cli_logger
 logger = setup_logger(__name__, "streamlit_app.log")
 cli_logger = get_cli_logger()
 
-# Initialize session state
-if 'initialized' not in st.session_state:
-    st.session_state.initialized = False
-    st.session_state.documents = []
-    st.session_state.chunks = []
-    st.session_state.entities = {}
-    st.session_state.relationships = []
-    st.session_state.processing_status = None
-    st.session_state.processing_progress = 0
-    st.session_state.processing_message = ""
-    st.session_state.query_history = []
-    st.session_state.conversation_id = str(uuid.uuid4())
-    st.session_state.resource_status = None
-    st.session_state.graph = None
+# Initialize session state dictionary with default values
+def init_session_state():
+    """Initialize all session state variables with default values."""
+    if 'initialized' not in st.session_state:
+        st.session_state['initialized'] = False
+    if 'documents' not in st.session_state:
+        st.session_state['documents'] = []
+    if 'chunks' not in st.session_state:
+        st.session_state['chunks'] = []
+    if 'entities' not in st.session_state:
+        st.session_state['entities'] = {}
+    if 'relationships' not in st.session_state:
+        st.session_state['relationships'] = []
+    if 'processing_status' not in st.session_state:
+        st.session_state['processing_status'] = None
+    if 'processing_progress' not in st.session_state:
+        st.session_state['processing_progress'] = 0
+    if 'processing_message' not in st.session_state:
+        st.session_state['processing_message'] = ""
+    if 'query_history' not in st.session_state:
+        st.session_state['query_history'] = []
+    if 'conversation_id' not in st.session_state:
+        st.session_state['conversation_id'] = str(uuid.uuid4())
+    if 'resource_status' not in st.session_state:
+        st.session_state['resource_status'] = None
+    if 'graph' not in st.session_state:
+        st.session_state['graph'] = None
 
 # Initialize components
 @st.cache_resource
@@ -66,7 +79,7 @@ def init_components():
     document_chunker = DocumentChunker()
     coreference_resolver = CoreferenceResolver()
     entity_extractor = EntityExtractor()
-    relationship_classifier = RelationshipClassifier()
+    relationship_classifier = RelationshipExtractor()
     bm25_indexer = BM25Indexer()
     embedding_indexer = EmbeddingIndexer()
     hybrid_searcher = HybridSearcher(bm25_indexer, embedding_indexer)
@@ -106,16 +119,16 @@ def init_components():
             unload_func=entity_extractor.unload_models
         )
 
-    if hasattr(relationship_classifier, 'load_models'):
-        resource_manager.register_model(
-            model_id="relation_model",
-            model_obj=None,
-            model_size_gb=1.0,
-            uses_gpu=True,
-            priority=2,
-            load_func=relationship_classifier.load_models,
-            unload_func=relationship_classifier.unload_models
-        )
+    # Register the relationship extractor
+    resource_manager.register_model(
+        model_id="relation_model",
+        model_obj=None,
+        model_size_gb=1.0,
+        uses_gpu=True,
+        priority=2,
+        load_func=relationship_classifier.load_models,
+        unload_func=relationship_classifier.unload_models
+    )
 
     if hasattr(embedding_indexer, 'load_model'):
         resource_manager.register_model(
@@ -373,9 +386,9 @@ def process_documents(uploaded_files):
     embedding_indexer = components['embedding_indexer']
 
     # Update status and create progress displays
-    st.session_state.processing_status = "running"
-    st.session_state.processing_progress = 0
-    st.session_state.processing_message = "Starting document processing..."
+    st.session_state['processing_status'] = "running"
+    st.session_state['processing_progress'] = 0
+    st.session_state['processing_message'] = "Starting document processing..."
     
     # Create progress displays
     progress_bar = st.progress(0)
@@ -407,11 +420,11 @@ def process_documents(uploaded_files):
 
             # Update progress
             progress = (i + 1) / len(uploaded_files) * 20  # 20% for document loading
-            st.session_state.processing_progress = progress
+            st.session_state['processing_progress'] = progress
             progress_bar.progress(progress / 100)
 
-        st.session_state.documents = documents
-        st.session_state.processing_message = f"Loaded {len(documents)} documents. Chunking..."
+        st.session_state['documents'] = documents
+        st.session_state['processing_message'] = f"Loaded {len(documents)} documents. Chunking..."
         status_text.text(f"Loaded {len(documents)} documents. Chunking...")
 
         # Step 2: Document Chunking
@@ -423,38 +436,38 @@ def process_documents(uploaded_files):
 
             # Update progress
             progress = 20 + (i + 1) / len(documents) * 20  # 20-40% for chunking
-            st.session_state.processing_progress = progress
+            st.session_state['processing_progress'] = progress
             progress_bar.progress(progress / 100)
 
-        st.session_state.chunks = all_chunks
+        st.session_state['chunks'] = all_chunks
         status_text.text(f"Created {len(all_chunks)} chunks. Resolving coreferences...")
 
         # Step 3: Coreference Resolution
         status_text.text("Resolving coreferences...")
         processed_chunks = coreference_resolver.process_chunks(all_chunks)
-        st.session_state.chunks = processed_chunks
+        st.session_state['chunks'] = processed_chunks
         progress_bar.progress(0.4)  # 40% after coreference
         status_text.text("Coreference resolution complete. Extracting entities...")
 
         # Step 4: Entity Extraction
         status_text.text("Extracting entities...")
         processed_chunks, entity_db = entity_extractor.process_chunks(processed_chunks)
-        st.session_state.chunks = processed_chunks
-        st.session_state.entities = entity_db
+        st.session_state['chunks'] = processed_chunks
+        st.session_state['entities'] = entity_db
         progress_bar.progress(0.6)  # 60% after entity extraction
         status_text.text(f"Extracted {len(entity_db)} entities. Classifying relationships...")
 
         # Step 5: Relationship Classification
         status_text.text("Classifying relationships...")
         relationships = relationship_classifier.extract_relationships(processed_chunks)
-        st.session_state.relationships = relationships
+        st.session_state['relationships'] = relationships
         progress_bar.progress(0.7)  # 70% after relationship classification
         status_text.text(f"Classified {len(relationships)} relationships. Building graph...")
 
         # Step 6: Build Entity Graph
         status_text.text("Building entity graph...")
-        graph = relationship_classifier.build_entity_graph(entity_db, relationships)
-        st.session_state.graph = graph
+        graph = relationship_classifier.build_relationship_graph(entity_db, relationships)
+        st.session_state['graph'] = graph
         progress_bar.progress(0.8)  # 80% after graph building
         status_text.text("Graph built. Indexing for search...")
 
@@ -471,11 +484,11 @@ def process_documents(uploaded_files):
         status_text.text("✅ Processing complete! Ready to query.")
 
         # Update status
-        st.session_state.processing_status = "complete"
+        st.session_state['processing_status'] = "complete"
 
     except Exception as e:
-        st.session_state.processing_status = "error"
-        st.session_state.processing_message = f"Error processing documents: {e}"
+        st.session_state['processing_status'] = "error"
+        st.session_state['processing_message'] = f"Error processing documents: {e}"
         status_text.text(f"❌ Error: {e}")
         logger.error(f"Error processing documents: {e}")
         logger.exception("Detailed traceback:")
@@ -488,11 +501,11 @@ def process_query(query, top_k=5):
 
     # Add to history
     if 'query_history' not in st.session_state:
-        st.session_state.query_history = []
+        st.session_state['query_history'] = []
 
     # Check if there's a conversation ID
     if 'conversation_id' not in st.session_state:
-        st.session_state.conversation_id = str(uuid.uuid4())
+        st.session_state['conversation_id'] = str(uuid.uuid4())
 
     components = init_components()
     query_processor = components['query_processor']
@@ -501,7 +514,7 @@ def process_query(query, top_k=5):
     response = query_processor.process_query(
         query=query,
         top_k=top_k,
-        conversation_id=st.session_state.conversation_id
+        conversation_id=st.session_state['conversation_id']
     )
 
     # Add to history
@@ -510,19 +523,19 @@ def process_query(query, top_k=5):
         'response': response,
         'timestamp': time.time()
     }
-    st.session_state.query_history.append(query_item)
+    st.session_state['query_history'].append(query_item)
 
     return response
 
 # Visualization functions
 def visualize_entity_network():
     """Visualize entity network as an interactive graph."""
-    if not st.session_state.graph:
+    if not st.session_state['graph']:
         st.warning("No entity relationships to visualize.")
         return
 
     # Create a wider pyvis network that fits better
-    graph = st.session_state.graph
+    graph = st.session_state['graph']
     network = net.Network(height="600px", width="100%", bgcolor="#ffffff", font_color="#333333", select_menu=True, filter_menu=True)
 
     # Set network options
@@ -652,7 +665,7 @@ def display_resource_status():
 
     # Get status
     status = resource_manager.get_resource_status()
-    st.session_state.resource_status = status
+    st.session_state['resource_status'] = status
 
     # Get key metrics
     ram = status.get('memory', {})
@@ -697,6 +710,9 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    
+    # Initialize session state
+    init_session_state()
     
     # Creative styling with modern aesthetics
     st.markdown("""
@@ -853,7 +869,7 @@ def main():
     apply_custom_styling()
 
     # Initialize components if needed
-    if not st.session_state.initialized:
+    if not st.session_state['initialized']:
         components = init_components()
         st.session_state.initialized = True
 
@@ -974,11 +990,6 @@ def main():
                 st.success("Chat reset")
         
         # Footer
-        st.markdown("""
-        <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 1rem; text-align: center; font-size: 0.7rem; color: #94a3b8; border-top: 1px solid #e5e7eb;">
-            Anti-Corruption Intelligence Suite<br>Version 1.0.0
-        </div>
-        """, unsafe_allow_html=True)
 
     # Creative header with animation
     st.markdown("""
